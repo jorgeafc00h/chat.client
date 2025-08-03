@@ -1,6 +1,77 @@
-# Getting Started with Create React App
+# FusionHit Chat Client
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A modern React TypeScript chat application with real-time messaging capabilities using SignalR. This client is designed to integrate with the FusionHit Chat API for enterprise chat functionality with document citations and AI assistance.
+
+## Features
+
+- **Real-time Messaging** - SignalR integration for instant message delivery
+- **Document Citations** - Display source documents with confidence scores
+- **Session Management** - Create and manage multiple chat sessions
+- **Typing Indicators** - Real-time typing status
+- **Responsive Design** - Built with Tailwind CSS for mobile and desktop
+- **TypeScript** - Full type safety and better development experience
+- **Modern UI** - Clean, professional interface with custom styling
+
+## Technology Stack
+
+- **React 19** with TypeScript
+- **SignalR** for real-time communication
+- **Tailwind CSS** for styling
+- **Microsoft SignalR Client** for WebSocket connections
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 16+ (Note: Some dependencies require Node 18+)
+- npm or yarn
+- FusionHit Chat API running (typically on https://localhost:7247)
+
+### Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/jorgeafc00h/chat.client.git
+   cd chat.client
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Configure environment variables:
+   Create a `.env.local` file in the root directory:
+   ```env
+   REACT_APP_API_BASE_URL=https://localhost:7247
+   REACT_APP_USER_ID=demo-user
+   ```
+
+4. Start the development server:
+   ```bash
+   npm start
+   ```
+
+   The application will open at `http://localhost:3000`
+
+## Project Structure
+
+```
+src/
+├── components/           # React components
+│   ├── ChatInterface.tsx    # Main chat container
+│   ├── MessageList.tsx      # Message display
+│   ├── MessageInput.tsx     # Message input form
+│   ├── ChatSidebar.tsx      # Session management
+│   ├── CitationDisplay.tsx  # Document citations
+│   └── ...
+├── services/            # API and SignalR services
+│   ├── signalRService.ts    # Real-time communication
+│   └── apiService.ts        # REST API calls
+├── types/               # TypeScript type definitions
+│   └── chat.ts             # Chat-related interfaces
+└── ...
+```
 
 ## Available Scripts
 
