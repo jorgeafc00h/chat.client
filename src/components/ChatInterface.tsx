@@ -28,14 +28,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ apiBaseUrl, userId
   const apiService = useRef<ApiService | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    initializeServices();
-    return () => {
-      cleanup();
-    };
-  }, []);
-
-  const initializeServices = async () => {
+  const initializeServices = useCallback(async () => {
     try {
       setIsConnecting(true);
       
@@ -59,7 +52,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ apiBaseUrl, userId
     } finally {
       setIsConnecting(false);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiBaseUrl]);
+
+  useEffect(() => {
+    initializeServices();
+    return () => {
+      cleanup();
+    };
+  }, [initializeServices]);
 
   const setupSignalREventHandlers = () => {
     if (!signalRService.current) return;
@@ -108,7 +109,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ apiBaseUrl, userId
     });
   };
 
-  const createOrJoinSession = async () => {
+  const createOrJoinSession = useCallback(async () => {
     try {
       if (!apiService.current) return;
 
@@ -126,7 +127,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ apiBaseUrl, userId
       console.error('Failed to create session:', error);
       setError('Failed to create chat session');
     }
-  };
+  }, [userId]);
 
   const sendMessage = useCallback(async (message: string) => {
     if (!signalRService.current || !currentSessionId || !message.trim()) {

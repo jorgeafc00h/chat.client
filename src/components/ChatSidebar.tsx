@@ -1,5 +1,5 @@
 // src/components/ChatSidebar.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ApiService } from '../services/apiService';
 import { ChatSession } from '../types/chat';
 
@@ -21,11 +21,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadSessions();
-  }, [userId]);
-
-  const loadSessions = async () => {
+  const loadSessions = useCallback(async () => {
     try {
       setLoading(true);
       const response = await apiService.getUserSessions(userId);
@@ -37,7 +33,11 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [apiService, userId]);
+
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
 
   const createNewSession = async () => {
     try {

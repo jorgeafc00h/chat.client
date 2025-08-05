@@ -1,6 +1,6 @@
 // src/services/signalRService.ts
 import * as signalR from "@microsoft/signalr";
-import { ChatMessage, Citation } from '../types/chat';
+import { ChatMessage } from '../types/chat';
 
 export interface ServerToClientEvents {
   SessionJoined: (data: { SessionId: string; Messages: ChatMessage[] }) => void;
@@ -22,9 +22,23 @@ export class SignalRService {
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
     this.connection = new signalR.HubConnectionBuilder()
-      .withUrl(`${baseUrl}/chatHub`)
+      .withUrl(`${baseUrl}/chatHub`, {
+        // Configure transport types - WebSockets first, then fallbacks
+        transport: signalR.HttpTransportType.WebSockets | 
+                  signalR.HttpTransportType.ServerSentEvents | 
+                  signalR.HttpTransportType.LongPolling,
+        
+        // Skip negotiation if using WebSockets (optional optimization)
+        skipNegotiation: false,
+        
+        // Configure headers if needed for authentication
+        headers: {
+          // Add any custom headers here if needed
+        }
+      })
       .withAutomaticReconnect({
         nextRetryDelayInMilliseconds: retryContext => {
+          console.log(`SignalR reconnect attempt ${retryContext.previousRetryCount + 1}`);
           if (retryContext.previousRetryCount === 0) return 0;
           if (retryContext.previousRetryCount === 1) return 2000;
           if (retryContext.previousRetryCount === 2) return 10000;
@@ -59,11 +73,23 @@ export class SignalRService {
 
   async start(): Promise<void> {
     try {
+      console.log(`Connecting to SignalR hub at: ${this.baseUrl}/chatHub`);
       await this.connection.start();
-      console.log('SignalR connection established');
+      console.log('SignalR connection established successfully');
+      console.log('Connection ID:', this.connection.connectionId);
       this.reconnectAttempts = 0;
     } catch (error) {
       console.error('Error starting SignalR connection:', error);
+      
+      // Provide more specific error information
+      if (error instanceof Error) {
+        if (error.message.includes('Failed to start the connection')) {
+          throw new Error('Cannot connect to chat service. Please ensure the API server is running on https://localhost:7265 and accessible.');
+        } else if (error.message.includes('CORS')) {
+          throw new Error('CORS error: Please check that the API server allows connections from this domain.');
+        }
+      }
+      
       throw new Error('Failed to connect to chat service. Please check your internet connection and try again.');
     }
   }
@@ -80,25 +106,29 @@ export class SignalRService {
   // Chat Methods
   async joinSession(sessionId: string): Promise<void> {
     if (!this.isConnected) {
-      throw new Error('SignalR connection is not established');
+      throw new Error(`SignalR connection is not established. Current state: ${this.connectionState}`);
     }
+    console.log(`Joining session: ${sessionId}`);
     await this.connection.invoke("JoinSession", sessionId);
   }
 
   async leaveSession(sessionId: string): Promise<void> {
     if (!this.isConnected) return;
+    console.log(`Leaving session: ${sessionId}`);
     await this.connection.invoke("LeaveSession", sessionId);
   }
 
   async sendMessage(sessionId: string, message: string): Promise<void> {
     if (!this.isConnected) {
-      throw new Error('SignalR connection is not established');
+      throw new Error(`SignalR connection is not established. Current state: ${this.connectionState}`);
     }
+    console.log(`Sending message to session ${sessionId}:`, message);
     await this.connection.invoke("SendMessage", sessionId, message);
   }
 
   async getSuggestions(sessionId: string): Promise<void> {
     if (!this.isConnected) return;
+    console.log(`Getting suggestions for session: ${sessionId}`);
     await this.connection.invoke("GetSuggestions", sessionId);
   }
 
@@ -158,8 +188,21 @@ export class SignalRService {
   }
 
   // Connection State
-  get connectionState(): signalR.HubConnectionState {
-    return this.connection.state;
+  get connectionState(): string {
+    switch (this.connection.state) {
+      case signalR.HubConnectionState.Disconnected:
+        return 'Disconnected';
+      case signalR.HubConnectionState.Connecting:
+        return 'Connecting';
+      case signalR.HubConnectionState.Connected:
+        return 'Connected';
+      case signalR.HubConnectionState.Disconnecting:
+        return 'Disconnecting';
+      case signalR.HubConnectionState.Reconnecting:
+        return 'Reconnecting';
+      default:
+        return 'Unknown';
+    }
   }
 
   get isConnected(): boolean {
@@ -168,5 +211,18 @@ export class SignalRService {
 
   get connectionId(): string | null {
     return this.connection.connectionId;
+  }
+
+  // Helper method to test connection
+  async testConnection(): Promise<boolean> {
+    try {
+      if (!this.isConnected) {
+        await this.start();
+      }
+      return true;
+    } catch (error) {
+      console.error('Connection test failed:', error);
+      return false;
+    }
   }
 }

@@ -25,7 +25,7 @@ A modern React TypeScript chat application with real-time messaging capabilities
 
 - Node.js 16+ (Note: Some dependencies require Node 18+)
 - npm or yarn
-- FusionHit Chat API running (typically on https://localhost:7247)
+- FusionHit Chat API running (typically on https://localhost:7265)
 
 ### Installation
 
@@ -43,7 +43,7 @@ A modern React TypeScript chat application with real-time messaging capabilities
 3. Configure environment variables:
    Create a `.env.local` file in the root directory:
    ```env
-   REACT_APP_API_BASE_URL=https://localhost:7247
+   REACT_APP_API_BASE_URL=https://localhost:7265
    REACT_APP_USER_ID=demo-user
    ```
 
