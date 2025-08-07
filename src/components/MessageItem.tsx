@@ -5,9 +5,10 @@ import { CitationDisplay } from './CitationDisplay';
 
 interface MessageItemProps {
   message: ChatMessage;
+  apiBaseUrl?: string;
 }
 
-export const MessageItem: React.FC<MessageItemProps> = ({ message }) => {
+export const MessageItem: React.FC<MessageItemProps> = ({ message, apiBaseUrl }) => {
   const isUser = message.role === 'user';
   const timestamp = new Date(message.timestamp).toLocaleTimeString([], { 
     hour: '2-digit', 
@@ -25,7 +26,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message }) => {
           
           {/* Citations */}
           {message.citations && message.citations.length > 0 && (
-            <CitationDisplay citations={message.citations} />
+            <CitationDisplay citations={message.citations} apiBaseUrl={apiBaseUrl} />
           )}
           
           {/* Timestamp */}

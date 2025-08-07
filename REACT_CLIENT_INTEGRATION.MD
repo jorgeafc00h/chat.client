@@ -1,16 +1,17 @@
 # React Client Integration Guide for FusionHit Chat API
 
-✅ **Updated August 2025** - This guide reflects the latest API improvements including enhanced CORS support, optimized SignalR configuration, comprehensive test coverage (199 tests with 193 passing), and production-ready authentication.
+✅ **Updated August 2025** - This guide reflects the latest API improvements including enhanced CORS support, optimized SignalR configuration, comprehensive test coverage (199 tests with 193 passing), production-ready authentication, and **enhanced PDF citation support with intelligent filename matching**.
 
 ## Table of Contents
 1. [Project Setup](#project-setup)
 2. [SignalR Client Implementation](#signalr-client-implementation)
 3. [React Components](#react-components)
 4. [API Service](#api-service)
-5. [Styling with Tailwind CSS](#styling-with-tailwind-css)
-6. [Testing the Integration](#testing-the-integration)
-7. [Production Considerations](#production-considerations)
-8. [Deployment](#deployment)
+5. [Citation Parsing & PDF Support](#citation-parsing--pdf-support)
+6. [Styling with Tailwind CSS](#styling-with-tailwind-css)
+7. [Testing the Integration](#testing-the-integration)
+8. [Production Considerations](#production-considerations)
+9. [Deployment](#deployment)
 
 ## Project Setup
 
@@ -205,7 +206,7 @@ export class SignalRService {
 
   constructor(baseUrl: string = 'http://localhost:5272', apiKey: string = '') {
     this.baseUrl = baseUrl;
-    this.apiKey = apiKey || process.env.REACT_APP_API_KEY || 'fusionhit-web-client-2025-secret-key';
+    this.apiKey = apiKey || process.env.REACT_APP_API_KEY || 'dev-api-key-12345';
     
     this.connection = new signalR.HubConnectionBuilder()
       .withUrl(`${baseUrl}/chathub?api_key=${encodeURIComponent(this.apiKey)}`, {
@@ -277,7 +278,7 @@ export class SignalRService {
         } else if (error.message.includes('CORS')) {
           throw new Error('CORS error: The API server CORS policy has been updated to support React integration. Please restart both servers if you recently made changes.');
         } else if (error.message.includes('401') || error.message.includes('Unauthorized')) {
-          throw new Error('Authentication failed: Please check your API key. Use "fusionhit-web-client-2025-secret-key" for local development.');
+          throw new Error('Authentication failed: Please check your API key. Use "dev-api-key-12345" for local development.');
         }
       }
       
@@ -413,7 +414,7 @@ export class ApiService {
 
   constructor(baseUrl: string = 'http://localhost:5272', apiKey: string = '') {
     this.baseUrl = baseUrl;
-    this.apiKey = apiKey || process.env.REACT_APP_API_KEY || 'fusionhit-web-client-2025-secret-key';
+    this.apiKey = apiKey || process.env.REACT_APP_API_KEY || 'dev-api-key-12345';
   }
 
   private async fetchWithErrorHandling<T>(url: string, options?: RequestInit): Promise<ApiResponse<T>> {
@@ -513,6 +514,30 @@ export class ApiService {
     return this.fetchWithErrorHandling<boolean>(`/api/documents/${documentId}`, {
       method: 'DELETE',
     });
+  }
+
+  // PDF Methods
+  getPdfUrl(filename: string): string {
+    return `${this.baseUrl}/api/document/pdf/${encodeURIComponent(filename)}`;
+  }
+
+  async downloadPdf(filename: string): Promise<Blob> {
+    try {
+      const response = await fetch(this.getPdfUrl(filename), {
+        headers: {
+          'X-API-Key': this.apiKey,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      return await response.blob();
+    } catch (error) {
+      console.error('PDF download failed:', error);
+      throw error;
+    }
   }
 
   // Health Check
@@ -786,6 +811,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         <MessageList 
           messages={messages}
           isTyping={isTyping}
+          apiService={apiService.current}
         />
         
         {/* Message Input */}
@@ -810,13 +836,15 @@ import React, { useEffect, useRef } from 'react';
 import { ChatMessage } from '../types/chat';
 import { MessageItem } from './MessageItem';
 import { TypingIndicator } from './TypingIndicator';
+import { ApiService } from '../services/apiService';
 
 interface MessageListProps {
   messages: ChatMessage[];
   isTyping: boolean;
+  apiService?: ApiService;
 }
 
-export const MessageList: React.FC<MessageListProps> = ({ messages, isTyping }) => {
+export const MessageList: React.FC<MessageListProps> = ({ messages, isTyping, apiService }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -844,6 +872,7 @@ export const MessageList: React.FC<MessageListProps> = ({ messages, isTyping }) 
           <MessageItem 
             key={message.id}
             message={message}
+            apiService={apiService}
           />
         ))
       )}
@@ -928,13 +957,22 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message }) => {
 // src/components/CitationDisplay.tsx
 import React from 'react';
 import { Citation } from '../types/chat';
+import { ApiService } from '../services/apiService';
 
 interface CitationDisplayProps {
   citations: Citation[];
+  apiService?: ApiService;
 }
 
-export const CitationDisplay: React.FC<CitationDisplayProps> = ({ citations }) => {
+export const CitationDisplay: React.FC<CitationDisplayProps> = ({ citations, apiService }) => {
   if (!citations.length) return null;
+
+  const handlePdfClick = (citation: Citation) => {
+    if (apiService) {
+      const pdfUrl = apiService.getPdfUrl(citation.filename);
+      window.open(pdfUrl, '_blank');
+    }
+  };
 
   return (
     <div className="mt-4 pt-3 border-t border-gray-200">
@@ -948,9 +986,21 @@ export const CitationDisplay: React.FC<CitationDisplayProps> = ({ citations }) =
         {citations.map((citation, index) => (
           <div key={index} className="bg-gray-50 p-3 rounded-lg border-l-4 border-fusion-blue-400">
             <div className="flex items-center justify-between mb-2">
-              <div className="font-medium text-gray-800 text-sm">
-                📄 {citation.filename}
-              </div>
+              <button
+                onClick={() => handlePdfClick(citation)}
+                className="font-medium text-gray-800 text-sm hover:text-fusion-blue-600 transition-colors flex items-center group"
+                disabled={!apiService}
+              >
+                <svg className="w-4 h-4 mr-1 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2h-2a2 2 0 01-2-2zm0 0V9a2 2 0 012-2h2a2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                {citation.filename}
+                {apiService && (
+                  <svg className="w-3 h-3 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                )}
+              </button>
               <div className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded">
                 Page {citation.pageNumber}
               </div>
@@ -964,6 +1014,11 @@ export const CitationDisplay: React.FC<CitationDisplayProps> = ({ citations }) =
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2h-2a2 2 0 01-2-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                 </svg>
                 Confidence: {(citation.confidence * 100).toFixed(1)}%
+              </div>
+            )}
+            {apiService && (
+              <div className="mt-2 text-xs text-gray-500">
+                Click the filename to open PDF in browser
               </div>
             )}
           </div>
@@ -1121,9 +1176,237 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 };
 ```
 
+## Citation Parsing & PDF Support
+
+The FusionHit Chat API now supports automatic citation parsing and PDF document linking. When the AI responds with citations, they are automatically extracted and displayed with clickable links to open PDF documents in the browser.
+
+### 1. Citation Parser Utility
+
+```typescript
+// src/utils/citationParser.ts
+export interface CitationMatch {
+  fullMatch: string;
+  filename: string;
+  pageNumber: number;
+  quote: string;
+}
+
+export interface Citation {
+  documentId: string;
+  filename: string;
+  pageNumber: number;
+  quote: string;
+  fullMatch: string;
+  confidence: number;
+}
+
+export class CitationParser {
+  // Regex to match citation tags in AI responses
+  private static readonly CITATION_REGEX = /<(?:citation|cipitation)\s+filename=['"]([^'"]+)['"]\s+page_number=['"](\d+)['"]>([^<]+)<\/(?:citation|cipitation)>/gi;
+
+  static parseCitations(text: string): CitationMatch[] {
+    const citations: CitationMatch[] = [];
+    
+    if (!text) return citations;
+    
+    let match;
+    while ((match = this.CITATION_REGEX.exec(text)) !== null) {
+      citations.push({
+        fullMatch: match[0],
+        filename: match[1],
+        pageNumber: parseInt(match[2]),
+        quote: match[3].trim()
+      });
+    }
+    
+    return citations;
+  }
+
+  static removeCitationTags(text: string): string {
+    if (!text) return '';
+    return text.replace(this.CITATION_REGEX, '$3');
+  }
+
+  static convertToCitations(citationMatches: CitationMatch[]): Citation[] {
+    return citationMatches.map(match => ({
+      documentId: match.filename.replace(/\.[^/.]+$/, ""), // Remove extension for ID
+      filename: match.filename,
+      pageNumber: match.pageNumber,
+      quote: match.quote,
+      fullMatch: match.fullMatch,
+      confidence: 1.0 // Default confidence
+    }));
+  }
+}
+```
+
+### 2. Updated Message Item with Citation Parsing
+
+```typescript
+// src/components/MessageItem.tsx (Updated)
+import React from 'react';
+import { ChatMessage } from '../types/chat';
+import { CitationDisplay } from './CitationDisplay';
+import { CitationParser } from '../utils/citationParser';
+import { ApiService } from '../services/apiService';
+
+interface MessageItemProps {
+  message: ChatMessage;
+  apiService?: ApiService;
+}
+
+export const MessageItem: React.FC<MessageItemProps> = ({ message, apiService }) => {
+  const isUser = message.role === 'user';
+  const timestamp = new Date(message.timestamp).toLocaleTimeString([], { 
+    hour: '2-digit', 
+    minute: '2-digit' 
+  });
+
+  // Parse citations from message content
+  const citationMatches = CitationParser.parseCitations(message.content);
+  const citations = CitationParser.convertToCitations(citationMatches);
+  const cleanContent = CitationParser.removeCitationTags(message.content);
+  
+  return (
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+      <div className={`chat-message ${isUser ? 'chat-message-user' : 'chat-message-assistant'}`}>
+        {/* Avatar */}
+        {!isUser && (
+          <div className="flex-shrink-0 mr-3">
+            <div className="w-8 h-8 bg-fusion-blue-500 rounded-full flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2h-2a2 2 0 01-2-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+            </div>
+          </div>
+        )}
+        
+        <div className="flex-1 min-w-0">
+          {/* Message Content */}
+          <div className="prose prose-sm max-w-none">
+            <div className="whitespace-pre-wrap break-words">{cleanContent}</div>
+          </div>
+          
+          {/* Citations */}
+          {citations.length > 0 && (
+            <CitationDisplay citations={citations} apiService={apiService} />
+          )}
+          
+          {/* Timestamp */}
+          <div className="text-xs text-gray-500 mt-2">{timestamp}</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+```
+
+### 3. Enhanced Usage Examples
+
+The citation parsing now works with both legacy and full filenames automatically:
+
+#### Example 1: Legacy Short Citation (Auto-Resolved)
+```
+Coordinar las fechas con tu DM. Ingresar la solicitud en el ERP Ledagmi con al menos 7 días de anticipación y antes del día 25 del mes de goce para que pueda procesarse en nómina. <citation filename="PO-PC-001.pdf" page_number="4">solicitud en el ERP Ledagmi</citation>
+```
+
+#### Example 2: Full Filename Citation (Exact Match)
+```
+Para más información sobre teletrabajo, consulta la política oficial. <citation filename="PO-PC-002 Política de Teletrabajo v5.pdf" page_number="2">modalidad de trabajo remoto</citation>
+```
+
+#### Example 3: Multiple Citations
+```
+Los empleados deben seguir las normas de seguridad <citation filename="PO-PC-003 Política de Salud y Seguridad en el Trabajo v2.pdf" page_number="1">protocolos de seguridad</citation> y también cumplir con el código de ética <citation filename="Código de Ética FusionHit v3.pdf" page_number="5">comportamiento ético</citation>.
+```
+
+**All examples above will be automatically parsed and displayed as:**
+- Clean message content (without citation tags)
+- Clickable citations with PDF icons
+- Smart links that resolve to the correct PDF file regardless of filename format
+- Proper error handling if files are missing
+
+### 4. Enhanced PDF Endpoint Integration
+
+The API provides an intelligent PDF serving endpoint with advanced filename matching:
+
+**Endpoint**: `GET /api/document/pdf/{filename}`
+
+**Enhanced Features**:
+- **Intelligent Filename Matching**: Handles both exact filenames and partial matches
+- **Multiple Matching Strategies**:
+  1. Exact filename match (e.g., `"PO-PC-001 Política Administración de Personal v5.pdf"`)
+  2. Automatic `.pdf` extension addition (e.g., `"PO-PC-001"` → `"PO-PC-001.pdf"`)
+  3. Partial matching for legacy support (e.g., `"PO-PC-001.pdf"` matches `"PO-PC-001 Política..."`)
+- **Smart Error Handling**: Detailed logging and appropriate HTTP status codes
+- **Security**: Proper path validation and API key authentication
+- **Content-Type**: Returns proper `application/pdf` content type with correct filename
+
+**Example Requests**:
+```typescript
+// All of these will work for the same PDF file:
+apiService.getPdfUrl("PO-PC-001 Política Administración de Personal v5.pdf") // Exact match
+apiService.getPdfUrl("PO-PC-001.pdf") // Partial match with fallback
+apiService.getPdfUrl("PO-PC-001") // Partial match with extension addition
+```
+
+### 5. Citation & PDF Troubleshooting
+
+#### Common Issues and Solutions:
+
+**Issue: Citations not showing up**
+- **Check**: Verify the AI response contains properly formatted citation tags
+- **Expected format**: `<citation filename="..." page_number="...">quote</citation>`
+- **Solution**: Check browser developer console for citation parsing errors
+
+**Issue: PDF links not working**
+- **Check**: Verify the PDF file exists in `wwwroot/Data` directory
+- **Check**: API key is properly configured
+- **Solution**: Try different filename variations (exact, with/without extension)
+
+**Issue: "PDF file not found" errors**
+- **Check**: Compare citation filename with actual file in server directory
+- **Debug**: Check server logs for filename matching attempts
+- **Solution**: Use exact filename from the server directory listing
+
+#### Testing Citation Parsing:
+
+```typescript
+// Test citation parsing utility
+import { CitationParser } from '../utils/citationParser';
+
+const testMessage = 'Your response here. <citation filename="PO-PC-001.pdf" page_number="4">solicitud en el ERP</citation>';
+
+const citations = CitationParser.parseCitations(testMessage);
+console.log('Parsed citations:', citations);
+
+const cleanContent = CitationParser.removeCitationTags(testMessage);
+console.log('Clean content:', cleanContent);
+```
+
+#### Testing PDF Access:
+
+```typescript
+// Test PDF accessibility
+const testPdfAccess = async () => {
+  try {
+    const pdfUrl = apiService.getPdfUrl("PO-PC-001.pdf");
+    const response = await fetch(pdfUrl);
+    
+    if (response.ok) {
+      console.log('PDF accessible:', pdfUrl);
+    } else {
+      console.error('PDF access failed:', response.status, response.statusText);
+    }
+  } catch (error) {
+    console.error('PDF access error:', error);
+  }
+};
+```
+
 ### Testing Without Authentication (Development Only)
 
-**⚠️ IMPORTANT**: The API now requires authentication by default. For production-ready development, use the provided development API key: `fusionhit-web-client-2025-secret-key`.
+**⚠️ IMPORTANT**: The API now requires authentication by default. For production-ready development, use the provided development API key: `dev-api-key-12345`.
 
 However, for initial testing or troubleshooting, you can temporarily disable authentication:
 
@@ -1159,12 +1442,46 @@ However, for initial testing or troubleshooting, you can temporarily disable aut
 **✅ Recommended**: Instead of disabling authentication, use the development API key:
 ```typescript
 // .env.local
-REACT_APP_API_KEY=fusionhit-web-client-2025-secret-key
+REACT_APP_API_KEY=dev-api-key-12345
 ```
 
 **⚠️ Critical**: Always re-enable authentication before deploying to production!
 
 ## Testing the Integration
+
+### PDF Citation Integration Checklist ✅
+
+Before deploying your React client, verify these citation and PDF features work correctly:
+
+#### Backend API Checklist:
+- [ ] **PDF Files Present**: Verify PDF files exist in `Chat.Api/wwwroot/Data/` directory
+- [ ] **DocumentController**: Test `GET /api/document/pdf/{filename}` endpoint
+- [ ] **Citation Parsing**: Confirm `CitationParser.ParseCitations()` works with test data
+- [ ] **AI System Prompt**: Check AI receives exact document filenames for citations
+- [ ] **Filename Matching**: Test both exact and partial filename resolution
+
+#### Frontend React Checklist:
+- [ ] **CitationParser Utility**: Import and test citation parsing functions
+- [ ] **MessageItem Component**: Verify citations are extracted and displayed
+- [ ] **CitationDisplay Component**: Confirm PDF links are clickable and functional
+- [ ] **API Service**: Test `getPdfUrl()` method returns correct URLs
+- [ ] **Error Handling**: Verify graceful handling of missing PDF files
+
+#### Integration Test Examples:
+
+```typescript
+// Test 1: Citation parsing
+const testResponse = "Check policy <citation filename=\"PO-PC-001.pdf\" page_number=\"4\">specific requirement</citation>";
+const citations = CitationParser.parseCitations(testResponse);
+console.assert(citations.length === 1, "Should find one citation");
+
+// Test 2: PDF URL generation  
+const pdfUrl = apiService.getPdfUrl("PO-PC-001.pdf");
+console.assert(pdfUrl.includes("/api/document/pdf/"), "Should generate correct PDF URL");
+
+// Test 3: End-to-end citation display
+// Send a message, receive response with citations, verify they display as clickable links
+```
 
 ### Current API Status ✅
 - **Test Suite**: 199 tests total, 193 passing (97% success rate)
@@ -1172,6 +1489,9 @@ REACT_APP_API_KEY=fusionhit-web-client-2025-secret-key
 - **CORS Support**: Enhanced for React applications with proper preflight handling
 - **SignalR Configuration**: Optimized with 15s keep-alive and 60s client timeout
 - **Authentication**: Production-ready with development API keys available
+- **📄 PDF Citation Support**: Enhanced with intelligent filename matching and fallback resolution
+- **🔍 AI Citations**: Improved system prompts for accurate document referencing
+- **🔗 Smart PDF Serving**: Multiple filename matching strategies with detailed error logging
 
 ### 1. Start the Services
 
@@ -1205,7 +1525,7 @@ npm start
 #### ✅ API Authentication Test
 ```bash
 # Test with valid API key
-curl -H "X-API-Key: fusionhit-web-client-2025-secret-key" http://localhost:5272/api/chat/sessions
+curl -H "X-API-Key: dev-api-key-12345" http://localhost:5272/api/chat/sessions
 
 # Test without API key (should return 401)
 curl http://localhost:5272/api/chat/sessions
@@ -1238,7 +1558,7 @@ curl http://localhost:5272/api/chat/sessions
 # .env.local for React app (recommended configuration)
 REACT_APP_API_BASE_URL=http://localhost:5272
 REACT_APP_USER_ID=demo-user
-REACT_APP_API_KEY=fusionhit-web-client-2025-secret-key  # Use development key for local testing
+REACT_APP_API_KEY=dev-api-key-12345  # Use development key for local testing
 
 # Optional: Enable debug logging for development
 REACT_APP_DEBUG_SIGNALR=true
@@ -1397,7 +1717,7 @@ curl http://localhost:5272/health
 
 # Test SignalR endpoint specifically  
 curl "http://localhost:5272/chathub/negotiate?negotiateVersion=1" \
-  -H "X-API-Key: fusionhit-web-client-2025-secret-key"
+  -H "X-API-Key: dev-api-key-12345"
 
 # Verify CORS preflight
 curl -X OPTIONS \
@@ -1426,7 +1746,7 @@ const testAuth = async () => {
   try {
     const response = await fetch('http://localhost:5272/api/chat/sessions', {
       headers: {
-        'X-API-Key': 'fusionhit-web-client-2025-secret-key'
+        'X-API-Key': 'dev-api-key-12345'
       }
     });
     console.log('Auth test:', response.status);
@@ -1492,7 +1812,7 @@ fetch('/health').then(r => r.json()).then(console.log);
 
 // Test SignalR connection manually
 const connection = new signalR.HubConnectionBuilder()
-  .withUrl('/chathub?api_key=fusionhit-web-client-2025-secret-key')
+  .withUrl('/chathub?api_key=dev-api-key-12345')
   .build();
   
 connection.start().then(() => console.log('✅ Connected'));
@@ -1501,8 +1821,8 @@ connection.start().then(() => console.log('✅ Connected'));
 #### API Endpoint Testing
 ```bash
 # Test all main endpoints
-curl -H "X-API-Key: fusionhit-web-client-2025-secret-key" http://localhost:5272/api/chat/sessions
-curl -H "X-API-Key: fusionhit-web-client-2025-secret-key" http://localhost:5272/api/documents
+curl -H "X-API-Key: dev-api-key-12345" http://localhost:5272/api/chat/sessions
+curl -H "X-API-Key: dev-api-key-12345" http://localhost:5272/api/documents
 curl http://localhost:5272/health
 ```
 
@@ -1703,7 +2023,7 @@ API keys are configured in the `appsettings.json` file under the `Authentication
     "ApiKeys": [
       {
         "Name": "Development Client",
-        "Key": "fusionhit-web-client-2025-secret-key", 
+        "Key": "dev-api-key-12345", 
         "IsActive": true,
         "Scopes": ["chat", "documents", "admin"]
       },
@@ -1721,7 +2041,7 @@ API keys are configured in the `appsettings.json` file under the `Authentication
 #### Development API Keys
 
 For local development, use these test keys (configured in `appsettings.Development.json`):
-- `fusionhit-web-client-2025-secret-key` - Full access (chat, documents, admin)
+- `dev-api-key-12345` - Full access (chat, documents, admin)
 - `test-api-key-67890` - Limited access (chat, documents)
 
 #### Production API Keys
@@ -1757,7 +2077,7 @@ To disable authentication temporarily for development:
 
 ```typescript
 // Initialize services with API key
-const apiKey = process.env.REACT_APP_API_KEY || 'fusionhit-web-client-2025-secret-key';
+const apiKey = process.env.REACT_APP_API_KEY || 'dev-api-key-12345';
 const signalRService = new SignalRService('https://localhost:7265', apiKey);
 const apiService = new ApiService('http://localhost:5272', apiKey);
 
@@ -1780,9 +2100,9 @@ await signalRService.start(); // Uses API key from constructor
 Create a `.env.local` file in your React app root:
 
 ```env
-REACT_APP_API_BASE_URL=https://localhost:7265
+REACT_APP_API_BASE_URL=http://localhost:5272
 REACT_APP_USER_ID=demo-user
-REACT_APP_API_KEY=fusionhit-web-client-2025-secret-key
+REACT_APP_API_KEY=dev-api-key-12345
 ```
 
 #### Error Handling

@@ -19,6 +19,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ apiBaseUrl, userId
   const [currentSessionId, setCurrentSessionId] = useState<string>('');
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string>('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   
@@ -97,9 +98,32 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ apiBaseUrl, userId
         sessionId: message.sessionId,
         role: message.role,
         content: message.content,
-        timestamp: message.timestamp
+        timestamp: message.timestamp,
+        citations: message.citations
       });
+      
+      // Log citation details if present
+      if (message.citations && message.citations.length > 0) {
+        console.group('[ChatInterface] 📄 Citations received:');
+        message.citations.forEach((citation, index) => {
+          console.log(`Citation ${index + 1}:`, {
+            documentId: citation.documentId,
+            filename: citation.filename,
+            pageNumber: citation.pageNumber,
+            quote: citation.quote,
+            confidence: citation.confidence,
+            documentUrl: citation.documentUrl
+          });
+        });
+        console.groupEnd();
+      }
+      
       setMessages(prev => [...prev, message]);
+      
+      // Stop processing when assistant responds
+      if (message.role === 'assistant') {
+        setIsProcessing(false);
+      }
     });
 
     signalRService.current.onMessageSent((confirmation) => {
@@ -164,6 +188,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ apiBaseUrl, userId
       console.log(`[ChatInterface] Preparing to send message to session ${currentSessionId}`);
       console.log(`[ChatInterface] Message content:`, message);
       
+      setIsProcessing(true);
+      
       // Add user message to UI immediately
       const userMessage: ChatMessage = {
         id: `temp-${Date.now()}`,
@@ -184,6 +210,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ apiBaseUrl, userId
     } catch (error) {
       console.error('[ChatInterface] Failed to send message:', error);
       setError('Failed to send message. Please try again.');
+      setIsProcessing(false);
     }
   }, [currentSessionId]);
 
@@ -266,7 +293,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ apiBaseUrl, userId
         {/* Messages */}
         <MessageList 
           messages={messages}
-          isTyping={false}
+          isTyping={isProcessing}
+          apiBaseUrl={apiBaseUrl}
         />
         
         {/* Message Input */}
@@ -275,7 +303,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ apiBaseUrl, userId
           onTyping={handleTyping}
           suggestions={[]}
           onGetSuggestions={getSuggestions}
-          disabled={!isConnected}
+          disabled={!isConnected || isProcessing}
         />
       </div>
     </div>

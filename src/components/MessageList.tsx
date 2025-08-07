@@ -7,9 +7,10 @@ import { TypingIndicator } from './TypingIndicator';
 interface MessageListProps {
   messages?: ChatMessage[];
   isTyping: boolean;
+  apiBaseUrl?: string;
 }
 
-export const MessageList: React.FC<MessageListProps> = ({ messages, isTyping }) => {
+export const MessageList: React.FC<MessageListProps> = ({ messages, isTyping, apiBaseUrl }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Safeguard: ensure messages is always an array using useMemo for performance
@@ -40,6 +41,7 @@ export const MessageList: React.FC<MessageListProps> = ({ messages, isTyping }) 
           <MessageItem 
             key={message.id}
             message={message}
+            apiBaseUrl={apiBaseUrl}
           />
         ))
       )}

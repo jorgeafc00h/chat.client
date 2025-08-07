@@ -15,6 +15,7 @@ export interface Citation {
   pageNumber: number;
   quote: string;
   confidence: number;
+  documentUrl?: string;
 }
 
 export interface ChatSession {

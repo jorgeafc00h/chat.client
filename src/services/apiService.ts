@@ -115,6 +115,59 @@ export class ApiService {
     });
   }
 
+  async getDocumentUrl(documentId: string): Promise<string> {
+    // Use the correct PDF endpoint format from the integration docs
+    return `${this.baseUrl}/api/document/pdf/${encodeURIComponent(documentId)}`;
+  }
+
+  // PDF Methods (as documented in integration guide)
+  getPdfUrl(filename: string): string {
+    return `${this.baseUrl}/api/document/pdf/${encodeURIComponent(filename)}`;
+  }
+
+  async downloadPdf(filename: string): Promise<Blob> {
+    try {
+      const response = await fetch(this.getPdfUrl(filename), {
+        headers: {
+          'X-API-Key': this.apiKey,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      return await response.blob();
+    } catch (error) {
+      console.error('PDF download failed:', error);
+      throw error;
+    }
+  }
+
+  async testDocumentAccess(filename: string): Promise<{ accessible: boolean; status: number; message: string }> {
+    try {
+      const url = this.getPdfUrl(filename);
+      const response = await fetch(url, { 
+        method: 'HEAD',
+        headers: {
+          'X-API-Key': this.apiKey
+        }
+      });
+      
+      return {
+        accessible: response.ok,
+        status: response.status,
+        message: response.ok ? 'Document accessible' : `${response.status} ${response.statusText}`
+      };
+    } catch (error) {
+      return {
+        accessible: false,
+        status: 0,
+        message: error instanceof Error ? error.message : 'Network error'
+      };
+    }
+  }
+
   // Health Check
   async checkHealth(): Promise<{ status: string; timestamp: string }> {
     try {
