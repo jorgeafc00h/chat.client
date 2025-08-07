@@ -3,22 +3,30 @@ import { ChatSession, ApiResponse, DocumentStatus } from '../types/chat';
 
 export class ApiService {
   private baseUrl: string;
+  private apiKey: string;
 
-  constructor(baseUrl: string) {
+  constructor(baseUrl: string = 'https://localhost:7265', apiKey: string = '') {
     this.baseUrl = baseUrl;
+    this.apiKey = apiKey || process.env.REACT_APP_API_KEY || 'fusionhit-web-client-2025-secret-key';
   }
 
   private async fetchWithErrorHandling<T>(url: string, options?: RequestInit): Promise<ApiResponse<T>> {
     try {
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-API-Key': this.apiKey,
+        ...options?.headers,
+      };
+
       const response = await fetch(`${this.baseUrl}${url}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...options?.headers,
-        },
+        headers,
         ...options,
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('Unauthorized: Invalid or missing API key');
+        }
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
@@ -66,12 +74,18 @@ export class ApiService {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch(`${this.baseUrl}/api/document/ingest`, {
+      const response = await fetch(`${this.baseUrl}/api/documents/upload`, {
         method: 'POST',
+        headers: {
+          'X-API-Key': this.apiKey,
+        },
         body: formData,
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('Unauthorized: Invalid or missing API key');
+        }
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
@@ -88,15 +102,15 @@ export class ApiService {
   }
 
   async getDocuments(): Promise<ApiResponse<any[]>> {
-    return this.fetchWithErrorHandling<any[]>('/api/document');
+    return this.fetchWithErrorHandling<any[]>('/api/documents');
   }
 
   async getDocumentStatus(documentId: string): Promise<ApiResponse<DocumentStatus>> {
-    return this.fetchWithErrorHandling<DocumentStatus>(`/api/document/status/${documentId}`);
+    return this.fetchWithErrorHandling<DocumentStatus>(`/api/documents/${documentId}/status`);
   }
 
   async deleteDocument(documentId: string): Promise<ApiResponse<boolean>> {
-    return this.fetchWithErrorHandling<boolean>(`/api/document/${documentId}`, {
+    return this.fetchWithErrorHandling<boolean>(`/api/documents/${documentId}`, {
       method: 'DELETE',
     });
   }

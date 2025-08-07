@@ -19,29 +19,30 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ apiBaseUrl, userId
   const [currentSessionId, setCurrentSessionId] = useState<string>('');
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(true);
-  const [isTyping, setIsTyping] = useState(false);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [error, setError] = useState<string>('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   
   const signalRService = useRef<SignalRService | null>(null);
   const apiService = useRef<ApiService | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const apiKey = process.env.REACT_APP_API_KEY;
 
   const initializeServices = useCallback(async () => {
     try {
       setIsConnecting(true);
       
       // Initialize services
-      signalRService.current = new SignalRService(apiBaseUrl);
-      apiService.current = new ApiService(apiBaseUrl);
+      signalRService.current = new SignalRService(apiBaseUrl, apiKey);
+      apiService.current = new ApiService(apiBaseUrl, apiKey);
       
-      // Setup SignalR event handlers
+      // Setup SignalR event handlers BEFORE starting connection
       setupSignalREventHandlers();
 
       // Start SignalR connection
       await signalRService.current.start();
       setIsConnected(true);
+      setError(''); // Clear any previous connection errors
+      console.log('[ChatInterface] SignalR connection established, now creating/joining session');
 
       // Create or get a session
       await createOrJoinSession();
@@ -65,37 +66,44 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ apiBaseUrl, userId
   const setupSignalREventHandlers = () => {
     if (!signalRService.current) return;
 
+    // Handle connection state changes
+    signalRService.current.onConnectionReconnected(() => {
+      console.log('[ChatInterface] SignalR reconnected successfully');
+      setIsConnected(true);
+      setError(''); // Clear error message on successful reconnection
+    });
+
+    signalRService.current.onConnectionReconnecting(() => {
+      console.log('[ChatInterface] SignalR reconnecting...');
+      setIsConnected(false);
+    });
+
+    signalRService.current.onConnectionClosed(() => {
+      console.log('[ChatInterface] SignalR connection closed');
+      setIsConnected(false);
+    });
+
     signalRService.current.onSessionJoined((data) => {
-      setMessages(data.Messages);
-      setCurrentSessionId(data.SessionId);
+      console.log('[ChatInterface] SessionJoined event received:', data);
+      setMessages(data.messages || []);
+      setCurrentSessionId(data.sessionId);
+      console.log('[ChatInterface] Updated sessionId to:', data.sessionId);
     });
 
     signalRService.current.onMessageReceived((message) => {
+      console.log('[ChatInterface] Received message from server:', message);
+      console.log('[ChatInterface] Message details:', {
+        id: message.id,
+        sessionId: message.sessionId,
+        role: message.role,
+        content: message.content,
+        timestamp: message.timestamp
+      });
       setMessages(prev => [...prev, message]);
     });
 
     signalRService.current.onMessageSent((confirmation) => {
       console.log('Message sent confirmation:', confirmation);
-    });
-
-    signalRService.current.onSuggestionsReceived((data) => {
-      setSuggestions(data.Suggestions);
-    });
-
-    signalRService.current.onUserTyping((data) => {
-      setIsTyping(data.IsTyping);
-      
-      if (data.IsTyping) {
-        // Clear existing timeout
-        if (typingTimeoutRef.current) {
-          clearTimeout(typingTimeoutRef.current);
-        }
-        
-        // Set timeout to hide typing indicator
-        typingTimeoutRef.current = setTimeout(() => {
-          setIsTyping(false);
-        }, 3000);
-      }
     });
 
     signalRService.current.onError((message) => {
@@ -113,12 +121,18 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ apiBaseUrl, userId
     try {
       if (!apiService.current) return;
 
+      console.log('[ChatInterface] Creating session for user:', userId);
       const response = await apiService.current.createSession(userId);
+      console.log('[ChatInterface] Create session response:', response);
+      
       if (response.success && response.data) {
+        console.log('[ChatInterface] Setting sessionId to:', response.data.id);
         setCurrentSessionId(response.data.id);
         
         if (signalRService.current) {
+          console.log('[ChatInterface] Joining SignalR session:', response.data.id);
           await signalRService.current.joinSession(response.data.id);
+          console.log('[ChatInterface] Successfully joined SignalR session');
         }
       } else {
         throw new Error(response.message || 'Failed to create session');
@@ -130,11 +144,26 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ apiBaseUrl, userId
   }, [userId]);
 
   const sendMessage = useCallback(async (message: string) => {
+    console.log('[ChatInterface] sendMessage called with:', {
+      message: message,
+      currentSessionId: currentSessionId,
+      hasSignalR: !!signalRService.current,
+      signalRConnected: signalRService.current?.isConnected
+    });
+    
     if (!signalRService.current || !currentSessionId || !message.trim()) {
+      console.warn('[ChatInterface] Cannot send message - missing requirements:', {
+        hasSignalR: !!signalRService.current,
+        hasSessionId: !!currentSessionId,
+        hasMessage: !!message.trim()
+      });
       return;
     }
 
     try {
+      console.log(`[ChatInterface] Preparing to send message to session ${currentSessionId}`);
+      console.log(`[ChatInterface] Message content:`, message);
+      
       // Add user message to UI immediately
       const userMessage: ChatMessage = {
         id: `temp-${Date.now()}`,
@@ -145,39 +174,28 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ apiBaseUrl, userId
       };
       
       setMessages(prev => [...prev, userMessage]);
+      console.log(`[ChatInterface] Added user message to UI`);
       
       // Send via SignalR
+      console.log(`[ChatInterface] Sending message via SignalR...`);
       await signalRService.current.sendMessage(currentSessionId, message);
+      console.log(`[ChatInterface] Message sent successfully via SignalR`);
       
     } catch (error) {
-      console.error('Failed to send message:', error);
+      console.error('[ChatInterface] Failed to send message:', error);
       setError('Failed to send message. Please try again.');
     }
   }, [currentSessionId]);
 
   const handleTyping = useCallback(async (isTyping: boolean) => {
-    if (!signalRService.current || !currentSessionId) return;
-
-    try {
-      if (isTyping) {
-        await signalRService.current.startTyping(currentSessionId);
-      } else {
-        await signalRService.current.stopTyping(currentSessionId);
-      }
-    } catch (error) {
-      console.error('Failed to send typing indicator:', error);
-    }
-  }, [currentSessionId]);
+    // Typing indicators removed as per guidelines
+    // This can be re-implemented when the backend supports it
+  }, []);
 
   const getSuggestions = useCallback(async () => {
-    if (!signalRService.current || !currentSessionId) return;
-
-    try {
-      await signalRService.current.getSuggestions(currentSessionId);
-    } catch (error) {
-      console.error('Failed to get suggestions:', error);
-    }
-  }, [currentSessionId]);
+    // Suggestions removed as per guidelines  
+    // This can be re-implemented when the backend supports it
+  }, []);
 
   const cleanup = () => {
     if (typingTimeoutRef.current) {
@@ -248,14 +266,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ apiBaseUrl, userId
         {/* Messages */}
         <MessageList 
           messages={messages}
-          isTyping={isTyping}
+          isTyping={false}
         />
         
         {/* Message Input */}
         <MessageInput
           onSendMessage={sendMessage}
           onTyping={handleTyping}
-          suggestions={suggestions}
+          suggestions={[]}
           onGetSuggestions={getSuggestions}
           disabled={!isConnected}
         />

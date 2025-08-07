@@ -3,26 +3,27 @@ import * as signalR from "@microsoft/signalr";
 import { ChatMessage } from '../types/chat';
 
 export interface ServerToClientEvents {
-  SessionJoined: (data: { SessionId: string; Messages: ChatMessage[] }) => void;
+  SessionJoined: (data: { sessionId: string; messages: ChatMessage[] }) => void;
   MessageReceived: (message: ChatMessage) => void;
-  MessageSent: (confirmation: { SessionId: string; Message: string; Timestamp: string; Role: string }) => void;
-  SuggestionsReceived: (data: { SessionId: string; Suggestions: string[] }) => void;
-  UserTyping: (data: { SessionId: string; ConnectionId: string; IsTyping: boolean }) => void;
+  MessageSent: (confirmation: { sessionId: string; messageId: string; timestamp: string }) => void;
   Error: (message: string) => void;
   DocumentIngested: (document: any) => void;
-  IngestionProgress: (data: { DocumentId: string; Progress: number; Status: string }) => void;
+  IngestionProgress: (data: { documentId: string; progress: number; status: string }) => void;
 }
 
 export class SignalRService {
   private connection: signalR.HubConnection;
   private readonly baseUrl: string;
+  private readonly apiKey: string;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
 
-  constructor(baseUrl: string) {
+  constructor(baseUrl: string = 'https://localhost:7265', apiKey: string = '') {
     this.baseUrl = baseUrl;
+    this.apiKey = apiKey || process.env.REACT_APP_API_KEY || 'fusionhit-web-client-2025-secret-key';
+    
     this.connection = new signalR.HubConnectionBuilder()
-      .withUrl(`${baseUrl}/chatHub`, {
+      .withUrl(`${baseUrl}/chathub?api_key=${encodeURIComponent(this.apiKey)}`, {
         // Configure transport types - WebSockets first, then fallbacks
         transport: signalR.HttpTransportType.WebSockets | 
                   signalR.HttpTransportType.ServerSentEvents | 
@@ -31,9 +32,9 @@ export class SignalRService {
         // Skip negotiation if using WebSockets (optional optimization)
         skipNegotiation: false,
         
-        // Configure headers if needed for authentication
+        // Configure headers with API key (fallback if query param doesn't work)
         headers: {
-          // Add any custom headers here if needed
+          'X-API-Key': this.apiKey
         }
       })
       .withAutomaticReconnect({
@@ -73,7 +74,7 @@ export class SignalRService {
 
   async start(): Promise<void> {
     try {
-      console.log(`Connecting to SignalR hub at: ${this.baseUrl}/chatHub`);
+      console.log(`Connecting to SignalR hub at: ${this.baseUrl}/chathub`);
       await this.connection.start();
       console.log('SignalR connection established successfully');
       console.log('Connection ID:', this.connection.connectionId);
@@ -83,10 +84,18 @@ export class SignalRService {
       
       // Provide more specific error information
       if (error instanceof Error) {
+        console.error('[SignalR] Error details:', {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        });
+        
         if (error.message.includes('Failed to start the connection')) {
           throw new Error('Cannot connect to chat service. Please ensure the API server is running on https://localhost:7265 and accessible.');
         } else if (error.message.includes('CORS')) {
           throw new Error('CORS error: Please check that the API server allows connections from this domain.');
+        } else if (error.message.includes('negotiate')) {
+          throw new Error('SignalR negotiation failed. Please check the server configuration and ensure /chathub is properly configured.');
         }
       }
       
@@ -126,24 +135,8 @@ export class SignalRService {
     await this.connection.invoke("SendMessage", sessionId, message);
   }
 
-  async getSuggestions(sessionId: string): Promise<void> {
-    if (!this.isConnected) return;
-    console.log(`Getting suggestions for session: ${sessionId}`);
-    await this.connection.invoke("GetSuggestions", sessionId);
-  }
-
-  async startTyping(sessionId: string): Promise<void> {
-    if (!this.isConnected) return;
-    await this.connection.invoke("StartTyping", sessionId);
-  }
-
-  async stopTyping(sessionId: string): Promise<void> {
-    if (!this.isConnected) return;
-    await this.connection.invoke("StopTyping", sessionId);
-  }
-
   // Event Listeners
-  onSessionJoined(callback: (data: { SessionId: string; Messages: ChatMessage[] }) => void): void {
+  onSessionJoined(callback: (data: { sessionId: string; messages: ChatMessage[] }) => void): void {
     this.connection.on("SessionJoined", callback);
   }
 
@@ -155,14 +148,6 @@ export class SignalRService {
     this.connection.on("MessageSent", callback);
   }
 
-  onSuggestionsReceived(callback: (data: { SessionId: string; Suggestions: string[] }) => void): void {
-    this.connection.on("SuggestionsReceived", callback);
-  }
-
-  onUserTyping(callback: (data: { SessionId: string; ConnectionId: string; IsTyping: boolean }) => void): void {
-    this.connection.on("UserTyping", callback);
-  }
-
   onError(callback: (message: string) => void): void {
     this.connection.on("Error", callback);
   }
@@ -171,8 +156,21 @@ export class SignalRService {
     this.connection.on("DocumentIngested", callback);
   }
 
-  onIngestionProgress(callback: (data: { DocumentId: string; Progress: number; Status: string }) => void): void {
+  onIngestionProgress(callback: (data: { documentId: string; progress: number; status: string }) => void): void {
     this.connection.on("IngestionProgress", callback);
+  }
+
+  // Connection state event handlers
+  onConnectionReconnected(callback: (connectionId?: string) => void): void {
+    this.connection.onreconnected(callback);
+  }
+
+  onConnectionReconnecting(callback: (error?: Error) => void): void {
+    this.connection.onreconnecting(callback);
+  }
+
+  onConnectionClosed(callback: (error?: Error) => void): void {
+    this.connection.onclose(callback);
   }
 
   // Remove event listeners
@@ -180,8 +178,6 @@ export class SignalRService {
     this.connection.off("SessionJoined");
     this.connection.off("MessageReceived");
     this.connection.off("MessageSent");
-    this.connection.off("SuggestionsReceived");
-    this.connection.off("UserTyping");
     this.connection.off("Error");
     this.connection.off("DocumentIngested");
     this.connection.off("IngestionProgress");

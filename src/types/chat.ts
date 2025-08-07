@@ -38,7 +38,7 @@ export interface ApiResponse<T> {
 export interface DocumentStatus {
   documentId: string;
   fileName: string;
-  status: 'Pending' | 'Processing' | 'Completed' | 'Failed';
+  status: 'pending' | 'processing' | 'completed' | 'failed';
   createdAt: string;
   processedAt?: string;
   errorMessage?: string;

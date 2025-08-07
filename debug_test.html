@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SignalR Debug Test</title>
+</head>
+<body>
+    <h1>SignalR Connection Test</h1>
+    <button id="connectBtn">Connect to SignalR</button>
+    <button id="sendBtn" disabled>Send Test Message</button>
+    <div id="status"></div>
+    <div id="messages"></div>
+
+    <script src="https://unpkg.com/@microsoft/signalr@latest/dist/browser/signalr.min.js"></script>
+    <script>
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("https://localhost:7265/chathub")
+            .configureLogging(signalR.LogLevel.Debug)
+            .build();
+
+        const statusDiv = document.getElementById('status');
+        const messagesDiv = document.getElementById('messages');
+        const connectBtn = document.getElementById('connectBtn');
+        const sendBtn = document.getElementById('sendBtn');
+
+        function log(message) {
+            console.log(message);
+            statusDiv.innerHTML += '<br>' + message;
+        }
+
+        function addMessage(message) {
+            messagesDiv.innerHTML += '<br>' + JSON.stringify(message);
+        }
+
+        connection.on("MessageReceived", (message) => {
+            log("Message received: " + JSON.stringify(message));
+            addMessage(message);
+        });
+
+        connection.on("MessageSent", (confirmation) => {
+            log("Message sent confirmation: " + JSON.stringify(confirmation));
+        });
+
+        connection.on("Error", (error) => {
+            log("SignalR Error: " + error);
+        });
+
+        connectBtn.addEventListener('click', async () => {
+            try {
+                log("Attempting to connect...");
+                await connection.start();
+                log("Connected successfully! Connection ID: " + connection.connectionId);
+                connectBtn.disabled = true;
+                sendBtn.disabled = false;
+            } catch (error) {
+                log("Connection failed: " + error);
+            }
+        });
+
+        sendBtn.addEventListener('click', async () => {
+            try {
+                const sessionId = "test-session-" + Date.now();
+                const message = "Hello, is the RAG service responding?";
+                
+                log("Sending message to session: " + sessionId);
+                log("Message: " + message);
+                
+                await connection.invoke("SendMessage", sessionId, message);
+                log("Message sent successfully!");
+            } catch (error) {
+                log("Failed to send message: " + error);
+            }
+        });
+    </script>
+</body>
+</html>
